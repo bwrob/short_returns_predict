@@ -2,6 +2,7 @@ import sklearn as skl
 import sklearn.linear_model as skl_lm
 import sklearn.model_selection as skl_ms
 from sklearn.preprocessing import StandardScaler
+import numpy as np
 
 import helpers as hlp
 
@@ -30,9 +31,19 @@ if __name__ == '__main__':
     X_train, X_test, y_train, y_test = skl_ms.train_test_split(X_scaled, y_categorized, test_size=0.25, random_state=1)
 
     # 6.
-    logistic_regression_model = skl_lm.LogisticRegression()
-    logistic_regression_model.fit(X_train, y_train)
-    y_prediction = logistic_regression_model.predict(X_test)
-    print("Accuracy:", skl.metrics.accuracy_score(y_test, y_prediction))
-    print("Precision:", skl.metrics.precision_score(y_test, y_prediction))
-    print("Recall:", skl.metrics.recall_score(y_test, y_prediction))
+    logistic_regression_model = skl_lm.LogisticRegression(penalty="l1", solver="liblinear")
+    #logistic_regression_model.fit(X_train, y_train)
+    #y_prediction = logistic_regression_model.predict(X_test)
+    #print("Accuracy:", skl.metrics.accuracy_score(y_test, y_prediction))
+    #print("Precision:", skl.metrics.precision_score(y_test, y_prediction))
+    #print("Recall:", skl.metrics.recall_score(y_test, y_prediction))
+
+    grid = dict()
+    grid['C'] = np.arange(0, 1, 0.01)
+    # define search
+    search = skl_ms.GridSearchCV(logistic_regression_model, grid, scoring='neg_mean_absolute_error', n_jobs=-1)
+    # perform the search
+    results = search.fit(X_train, y_train)
+    # summarize
+    print('MAE: %.3f' % results.best_score_)
+    print('Config: %s' % results.best_params_)

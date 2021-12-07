@@ -91,7 +91,7 @@ def add_statistics(historical_data,
 
 def categorize_return_data(statistics_data, low_cutoff, high_cutoff):
     df = statistics_data[(statistics_data["Return_future"] >= high_cutoff) | (statistics_data["Return_future"] <= low_cutoff)].copy()
-    df["Return_direction"] = np.where(df["Return_future"] > 0, 1, 0)
+    df["Return_direction"] = np.where(df["Return_future"] > 0, 1, -1)
     return df["Return_direction"]
 
 
