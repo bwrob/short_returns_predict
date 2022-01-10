@@ -1,20 +1,21 @@
-import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import yfinance as yf
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import StandardScaler
 
 # Gather hard-coded variables
-# TODO CapsLock to the variables
-flt_market_cap_limit = 10E11
-str_default_ticker = "GME"
-str_default_period = "5y"
-str_interval = "1d"
-str_csv_format = "_historical_data.csv"
+FLT_MARKET_CAP = 1E11
+STR_DEFAULT_TICKER = "GME"
+STR_DEFAULT_PERIOD = "5y"
+STR_INTERVAL = "1d"
+STR_CSV_FORMAT = "_historical_data.csv"
+LST_MANDATORY_COLUMNS = ["Open", "High", "Low", "Close", "Volume"]
 
 
 def get_ticker_historical_data(ticker_code,
-                               data_period=str_default_period,
-                               use_persisted_data=True,
+                               data_period=STR_DEFAULT_PERIOD,
+                               use_persisted_data=False,
                                persist_data=False):
     """
     Function fetches daily historical price data for the given ticker.
@@ -25,42 +26,65 @@ def get_ticker_historical_data(ticker_code,
         Period of data to fetch from Yahoo Finance. Default is 5 years.
         Valid periods: 1d,5d,1mo,3mo,6mo,1y,2y,5y,10y,ytd,max.
     :param use_persisted_data: bool, optional
-        Load data from (ticker_code)_historical_data.csv file. Default is True.
+        Load data from (ticker_code)_historical_data.csv file. Default is False.
     :param persist_data: bool, optional
         Persist fetched data to (ticker_code)_historical_data.csv file. Default is False.
     :return: DataFrame
         Historical data indexed by Date with columns Open, High, Low, Close, Volume, Dividends, Stock, Splits.
     """
-    if use_persisted_data & persist_data:
+
+    if use_persisted_data and persist_data:
         raise Exception("Can't load and stream data at the same time.")
 
     if use_persisted_data:
-        historical_data = pd.read_csv(ticker_code + str_csv_format)
+        historical_data = pd.read_csv(ticker_code + STR_CSV_FORMAT)
     else:
         ticker = yf.Ticker(ticker_code)
         market_cap = ticker.info['marketCap']
-        if market_cap > flt_market_cap_limit:
-            raise Exception(f"""This analysis is intended for assets with market cap up to {flt_market_cap_limit}. 
+        if market_cap > FLT_MARKET_CAP:
+            raise Exception(f"""This analysis is intended for assets with market cap up to {FLT_MARKET_CAP}. 
             Current asset market cap is {market_cap}, choose different ticker.""")
-        historical_data = ticker.history(period=data_period, interval=str_interval, rounding=True)
-        # TODO historical_data = historical_data[["Open", "High", "Low", "Close", "Volume"]]
+        historical_data = ticker.history(period=data_period, interval=STR_INTERVAL, rounding=True)
         if persist_data:
-            historical_data.to_csv(ticker_code + str_csv_format)
+            historical_data.to_csv(ticker_code + STR_CSV_FORMAT)
     return historical_data
 
-# TODO change default argument values to unmutable type (tuple?)
+
 def add_statistics(historical_data,
-                   use_sign=True,
-                   use_move=True,
-                   use_range=True,
-                   sma_windows=[15, 30, 100, 200],
-                   ema_alphas=[0.5, 0.25],
-                   momentum_windows=[5, 15, 30]):
+                   use_sign=False,
+                   use_move=False,
+                   use_range=False,
+                   sma_windows=(),
+                   ema_alphas=(),
+                   momentum_windows=()):
+    """
+    Function calculates specified time series statistics.
+    Features Return and Return_future are always present in the output.
+    Possible
+    :param historical_data: DataFrame
+        Asset daily price data containing columns Open, High, Low, Close, Volume.
+    :param use_sign: bool, optional
+        Calculate sign feature. Default is False.
+    :param use_move: bool, optional
+        Calculate daily price move feature. Default is False.
+    :param use_range: bool, optional
+        Calculate daily price range. Default is False.
+    :param sma_windows: tuple, optional
+        Lookback periods for calculating simple moving average. Default is empty tuple.
+    :param ema_alphas: tuple, optional
+        Alpha parameters for calculating exponential moving average. Default is empty tuple.
+    :param momentum_windows: tuple, optional
+        Periods for calculating momentum. Default is empty tuple.
+    :return: DataFrame
+        Data contains historical data and calculated statistics.
+    """
+
     # Extract only relevant columns and store in temporary data frame
-    # TODO remove redundant df -> df = historical_data.copy() <- always use a copy to avoid warnings
+    for column in LST_MANDATORY_COLUMNS:
+        if not (column in historical_data):
+            raise Exception(f"""Historical data not complete, {column} is missing.""")
     df = historical_data[["Open", "High", "Low", "Close", "Volume"]].copy()
 
-    #TODO clear up returns
     # Add daily price returns, future return and sign
     df["Return"] = df["Close"].pct_change(1)
     if use_sign:
@@ -89,20 +113,38 @@ def add_statistics(historical_data,
     return df.dropna()
 
 
-def categorize_return_data(statistics_data, low_cutoff, high_cutoff):
-    df = statistics_data[(statistics_data["Return_future"] >= high_cutoff) | (statistics_data["Return_future"] <= low_cutoff)].copy()
-    df["Return_direction"] = np.where(df["Return_future"] > 0, 1, -1)
-    return df["Return_direction"]
+def prepare_regression_data(data, feature_names, low_cutoff=0.0, high_cutoff=0.0):
+    """
+    Function prepares statistics data for the use in regression model. Following steps are done:
+    1. Remove data with Return in cutoff interval.
+    2. Select only desired features.py
+    3. Scale data to normal distributions
+    4. Categorize Return data
+    5. Split data to features and signal; train and test data.
+    :param data: DataFrame
+        Data with calculated statistics.
+    :param feature_names: list string
+        Features to use as explanatory variables.
+    :param low_cutoff: float, optional
+        Lower bound of returns cutoff.
+    :param high_cutoff: float, optional
+        Upper bound for returns cutoff.
+    :return: tuple DataFrame
+        X_train, X_test, y_train, y_test
+    """
 
+    # remove data with returns within cutoff
+    data_filtered = data[(data["Return_future"] >= high_cutoff) | (data["Return_future"] <= low_cutoff)].copy()
 
-if __name__ == '__main__':
-    # test the statistics functions and visualize them on plots
+    # select only desired features
+    x = data_filtered[feature_names]
 
-    # load and save data
-    # data = get_ticker_historical_data(str_default_ticker, use_persisted_data=False, persist_data=True)
-    # print(data.head())
+    # scale the features data to have normal distributions
+    scaler = StandardScaler()
+    x_scaled = scaler.fit_transform(x)
 
-    data = get_ticker_historical_data(str_default_ticker, use_persisted_data=True)
-    data_with_statistics = add_statistics(data)
-    data_with_statistics.plot(x="Date", y=["Return"])
-    plt.show()
+    # categorize data
+    y_categorized = np.where(data_filtered["Return_future"] > 0, 1, -1)
+
+    # split data randomly (but with set seed) to train and test population
+    return train_test_split(x_scaled, y_categorized, test_size=0.25, random_state=1)
